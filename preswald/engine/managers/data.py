@@ -323,17 +323,23 @@ class ParquetSource(DataSource):
         self._table_name = f"parquet_{name}_{uuid.uuid4().hex[:8]}"
 
         try:
-            # Load the parquet file using pandas
-            df = pd.read_parquet(self.path, columns=self.columns)
-
-            # Register the DataFrame in DuckDB
-            self._duckdb.register(self._table_name, df)
-        except ImportError:
-            raise RuntimeError(
-                "Missing PyArrow or FastParquet. Install with: pip install preswald[parquet]"
-            ) from None
+            # Load Parquet using DuckDB
+            if self.columns:
+                column_str = ", ".join(f'"{col}"' for col in self.columns)
+                self._duckdb.execute(f"""
+                    CREATE TABLE {self._table_name} AS
+                    SELECT {column_str}
+                    FROM read_parquet('{self.path}')
+                """)
+            else:
+                self._duckdb.execute(f"""
+                    CREATE TABLE {self._table_name} AS
+                    SELECT * FROM read_parquet('{self.path}')
+                """)
         except Exception as e:
-            raise Exception(f"Failed to load parquet file '{self.path}': {e!s}") from e
+            raise Exception(
+                f"Failed to load parquet file '{self.path}' using DuckDB: {e!s}"
+            ) from e
 
     def query(self, sql: str) -> pd.DataFrame:
         query = sql.replace(self.name, self._table_name)
